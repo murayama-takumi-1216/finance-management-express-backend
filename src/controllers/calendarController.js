@@ -1025,6 +1025,13 @@ export const createAccountReminder = async (req, res) => {
     const { accountId } = req.params;
     const { mensaje, fecha_recordatorio, minutos_antes, id_evento } = req.body;
 
+    // Parse minutos_antes as integer (frontend sends it as string)
+    const minutosAntesInt = parseInt(minutos_antes) || 0;
+
+    // Calculate the actual reminder time (event time - minutos_antes)
+    const eventTime = new Date(fecha_recordatorio);
+    const reminderTime = new Date(eventTime.getTime() - (minutosAntesInt * 60 * 1000));
+
     // If no event is specified, create a generic reminder event first
     let eventId = id_evento;
 
@@ -1043,7 +1050,7 @@ export const createAccountReminder = async (req, res) => {
       `INSERT INTO recordatorios (id_evento, minutos_antes, canal, activo, mensaje, fecha_recordatorio)
        VALUES ($1, $2, 'notificacion_app', TRUE, $3, $4)
        RETURNING *`,
-      [eventId, minutos_antes || 0, mensaje, fecha_recordatorio]
+      [eventId, minutosAntesInt, mensaje, reminderTime.toISOString()]
     );
 
     const reminder = result.rows[0];
