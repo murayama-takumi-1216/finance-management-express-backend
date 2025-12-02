@@ -218,27 +218,112 @@ export const createAccount = async (req, res) => {
   }
 };
 
+// Exchange rates relative to USD (base currency)
+const EXCHANGE_RATES = {
+  USD: 1,
+  EUR: 0.92,
+  GBP: 0.79,
+  MXN: 17.15,
+  ARS: 350.00,
+  BRL: 4.97,
+  COP: 3950.00
+};
+
+/**
+ * Convert amount from one currency to another
+ */
+const convertCurrency = (amount, fromCurrency, toCurrency) => {
+  if (fromCurrency === toCurrency) return amount;
+
+  // Convert to USD first, then to target currency
+  const amountInUSD = amount / EXCHANGE_RATES[fromCurrency];
+  const convertedAmount = amountInUSD * EXCHANGE_RATES[toCurrency];
+
+  return Math.round(convertedAmount * 100) / 100; // Round to 2 decimal places
+};
+
 /**
  * Update account
  */
 export const updateAccount = async (req, res) => {
+  const client = await getClient();
+
   try {
+    await client.query('BEGIN');
+
     const { accountId } = req.params;
     const { nombre, tipo, moneda, estado } = req.body;
 
     // Check if user is owner or admin
     if (!req.user.isAdmin) {
-      const ownerCheck = await query(
+      const ownerCheck = await client.query(
         'SELECT rol_en_cuenta FROM usuario_cuenta WHERE id_cuenta = $1 AND id_usuario = $2',
         [accountId, req.user.id]
       );
 
       if (ownerCheck.rows.length === 0 || ownerCheck.rows[0].rol_en_cuenta !== ROL_PROPIETARIO) {
+        await client.query('ROLLBACK');
         return res.status(403).json({ error: 'Only account owner can update account.' });
       }
     }
 
-    const result = await query(
+    // Get current account to check if currency is changing
+    const currentAccount = await client.query(
+      'SELECT moneda FROM cuentas WHERE id_cuenta = $1',
+      [accountId]
+    );
+
+    if (currentAccount.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Account not found.' });
+    }
+
+    const oldCurrency = currentAccount.rows[0].moneda;
+    const newCurrency = moneda || oldCurrency;
+
+    // If currency is changing, convert all movements
+    if (newCurrency !== oldCurrency) {
+      // Get all movements for this account
+      const movements = await client.query(
+        'SELECT id_movimiento, importe FROM movimientos WHERE id_cuenta = $1',
+        [accountId]
+      );
+
+      // Update each movement with converted amount
+      for (const movement of movements.rows) {
+        const convertedAmount = convertCurrency(
+          parseFloat(movement.importe),
+          oldCurrency,
+          newCurrency
+        );
+
+        await client.query(
+          'UPDATE movimientos SET importe = $1, updated_at = CURRENT_TIMESTAMP WHERE id_movimiento = $2',
+          [convertedAmount, movement.id_movimiento]
+        );
+      }
+
+      // Also convert event amounts
+      const events = await client.query(
+        'SELECT id_evento, monto FROM eventos_calendario WHERE id_cuenta = $1 AND monto IS NOT NULL',
+        [accountId]
+      );
+
+      for (const event of events.rows) {
+        const convertedAmount = convertCurrency(
+          parseFloat(event.monto),
+          oldCurrency,
+          newCurrency
+        );
+
+        await client.query(
+          'UPDATE eventos_calendario SET monto = $1, updated_at = CURRENT_TIMESTAMP WHERE id_evento = $2',
+          [convertedAmount, event.id_evento]
+        );
+      }
+    }
+
+    const result = await client.query(
       `UPDATE cuentas
        SET nombre = COALESCE($1, nombre),
            tipo = COALESCE($2, tipo),
@@ -250,14 +335,14 @@ export const updateAccount = async (req, res) => {
       [nombre, tipo, moneda, estado, accountId]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Account not found.' });
-    }
+    await client.query('COMMIT');
 
     const account = result.rows[0];
 
     res.json({
-      message: 'Account updated successfully',
+      message: newCurrency !== oldCurrency
+        ? `Account updated and all amounts converted from ${oldCurrency} to ${newCurrency}`
+        : 'Account updated successfully',
       account: {
         id: account.id_cuenta,
         nombre: account.nombre,
@@ -265,11 +350,15 @@ export const updateAccount = async (req, res) => {
         moneda: account.moneda,
         estado: account.estado,
         updatedAt: account.updated_at
-      }
+      },
+      currencyConverted: newCurrency !== oldCurrency
     });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Update account error:', error);
     res.status(500).json({ error: 'Failed to update account.' });
+  } finally {
+    client.release();
   }
 };
 
