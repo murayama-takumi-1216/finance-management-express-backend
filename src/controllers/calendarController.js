@@ -1028,9 +1028,37 @@ export const createAccountReminder = async (req, res) => {
     // Parse minutos_antes as integer (frontend sends it as string)
     const minutosAntesInt = parseInt(minutos_antes) || 0;
 
-    // Calculate the actual reminder time (event time - minutos_antes)
-    const eventTime = new Date(fecha_recordatorio);
+    // Parse the local datetime string (format: YYYY-MM-DDTHH:mm:ss)
+    // and calculate reminder time by subtracting minutes
+    const [datePart, timePart] = fecha_recordatorio.split('T');
+    const [year, month, day] = datePart.split('-').map(Number);
+    const [hours, minutes, seconds] = timePart.split(':').map(Number);
+
+    // Create date object with local time components
+    const eventTime = new Date(year, month - 1, day, hours, minutes, seconds || 0);
+
+    // Calculate reminder time (subtract minutos_antes)
     const reminderTime = new Date(eventTime.getTime() - (minutosAntesInt * 60 * 1000));
+
+    // Format reminder time as local datetime string (preserve local time)
+    const formatLocalDateTime = (date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      const h = String(date.getHours()).padStart(2, '0');
+      const min = String(date.getMinutes()).padStart(2, '0');
+      const s = String(date.getSeconds()).padStart(2, '0');
+      return `${y}-${m}-${d}T${h}:${min}:${s}`;
+    };
+
+    const reminderTimeStr = formatLocalDateTime(reminderTime);
+
+    console.log('Create Reminder Debug:', {
+      rawMinutosAntes: minutos_antes,
+      parsedMinutosAntes: minutosAntesInt,
+      eventTimeInput: fecha_recordatorio,
+      reminderTimeCalculated: reminderTimeStr,
+    });
 
     // If no event is specified, create a generic reminder event first
     let eventId = id_evento;
@@ -1050,7 +1078,7 @@ export const createAccountReminder = async (req, res) => {
       `INSERT INTO recordatorios (id_evento, minutos_antes, canal, activo, mensaje, fecha_recordatorio)
        VALUES ($1, $2, 'notificacion_app', TRUE, $3, $4)
        RETURNING *`,
-      [eventId, minutosAntesInt, mensaje, reminderTime.toISOString()]
+      [eventId, minutosAntesInt, mensaje, reminderTimeStr]
     );
 
     const reminder = result.rows[0];
