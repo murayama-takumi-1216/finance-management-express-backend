@@ -15,6 +15,7 @@ import * as documentController from '../controllers/documentController.js';
 import * as taskController from '../controllers/taskController.js';
 import * as calendarController from '../controllers/calendarController.js';
 import * as reportController from '../controllers/reportController.js';
+import * as notificationController from '../controllers/notificationController.js';
 
 const router = Router();
 
@@ -668,5 +669,32 @@ router.get('/accounts/:accountId/reports/most-expensive-month',
 
 // Admin reports
 router.get('/admin/reports/all-accounts', authenticate, requireAdmin, reportController.getAllAccountsSummary);
+
+// ==================== NOTIFICATION ROUTES ====================
+// User notifications
+router.get('/notifications', authenticate, notificationController.getNotifications);
+router.get('/notifications/unread-count', authenticate, notificationController.getUnreadCount);
+router.put('/notifications/:notificationId/read',
+  authenticate,
+  param('notificationId').isUUID().withMessage(errorMessages.uuid('Notification ID')),
+  validate,
+  notificationController.markAsRead
+);
+router.put('/notifications/read-all', authenticate, notificationController.markAllAsRead);
+router.delete('/notifications/:notificationId',
+  authenticate,
+  param('notificationId').isUUID().withMessage(errorMessages.uuid('Notification ID')),
+  validate,
+  notificationController.deleteNotification
+);
+router.delete('/notifications', authenticate, notificationController.clearAllNotifications);
+
+// User preferences (including notification settings)
+router.get('/preferences', authenticate, notificationController.getUserPreferences);
+router.put('/preferences', authenticate, notificationController.updateUserPreferences);
+router.get('/preferences/sounds', authenticate, notificationController.getAvailableSounds);
+
+// Admin notification endpoints
+router.post('/admin/notifications/process-reminders', authenticate, requireAdmin, notificationController.processPendingReminders);
 
 export default router;

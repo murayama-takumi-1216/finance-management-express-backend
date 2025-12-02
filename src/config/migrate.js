@@ -362,6 +362,44 @@ const createTables = async () => {
     `);
     console.log('Table integraciones_calendario created');
 
+    // Create User Preferences table
+    await query(`
+      CREATE TABLE IF NOT EXISTS user_preferences (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id_usuario UUID NOT NULL UNIQUE REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
+        notifications_enabled BOOLEAN DEFAULT TRUE,
+        notification_sound VARCHAR(50) DEFAULT 'default',
+        notification_volume INTEGER DEFAULT 80 CHECK (notification_volume >= 0 AND notification_volume <= 100),
+        quiet_hours_enabled BOOLEAN DEFAULT FALSE,
+        quiet_hours_start TIME DEFAULT '22:00',
+        quiet_hours_end TIME DEFAULT '08:00',
+        email_notifications BOOLEAN DEFAULT TRUE,
+        browser_notifications BOOLEAN DEFAULT TRUE,
+        timezone VARCHAR(50) DEFAULT 'UTC',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('Table user_preferences created');
+
+    // Create Notifications table (for in-app notifications)
+    await query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id_notification UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id_usuario UUID NOT NULL REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
+        titulo VARCHAR(255) NOT NULL,
+        mensaje TEXT,
+        tipo VARCHAR(50) DEFAULT 'info',
+        id_evento UUID REFERENCES eventos_calendario(id_evento) ON DELETE SET NULL,
+        id_recordatorio UUID REFERENCES recordatorios(id_recordatorio) ON DELETE SET NULL,
+        id_tarea UUID REFERENCES tareas(id_tarea) ON DELETE SET NULL,
+        leido BOOLEAN DEFAULT FALSE,
+        fecha_leido TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('Table notifications created');
+
     // Create indexes for better query performance
     await query(`CREATE INDEX IF NOT EXISTS idx_movimientos_cuenta ON movimientos(id_cuenta);`);
     await query(`CREATE INDEX IF NOT EXISTS idx_movimientos_fecha ON movimientos(fecha_operacion);`);
@@ -377,6 +415,8 @@ const createTables = async () => {
     await query(`CREATE INDEX IF NOT EXISTS idx_recordatorios_fecha ON recordatorios(fecha_recordatorio);`);
     await query(`CREATE INDEX IF NOT EXISTS idx_usuario_cuenta_usuario ON usuario_cuenta(id_usuario);`);
     await query(`CREATE INDEX IF NOT EXISTS idx_usuario_cuenta_cuenta ON usuario_cuenta(id_cuenta);`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_notifications_usuario ON notifications(id_usuario);`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_notifications_leido ON notifications(id_usuario, leido);`);
     console.log('Indexes created');
 
     console.log('Migration completed successfully!');
