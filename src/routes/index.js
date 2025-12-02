@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { body, param, query as queryValidator } from 'express-validator';
 import { validate, errorMessages } from '../middleware/validation.js';
 import { authenticate, requireAdmin, checkAccountPermission, attachAccountInfo } from '../middleware/auth.js';
-import { upload, uploadMultiple } from '../middleware/upload.js';
+import { upload, uploadMultiple, uploadAudio } from '../middleware/upload.js';
 
 // Controllers
 import * as authController from '../controllers/authController.js';
@@ -693,6 +693,19 @@ router.delete('/notifications', authenticate, notificationController.clearAllNot
 router.get('/preferences', authenticate, notificationController.getUserPreferences);
 router.put('/preferences', authenticate, notificationController.updateUserPreferences);
 router.get('/preferences/sounds', authenticate, notificationController.getAvailableSounds);
+
+// Custom notification sounds
+router.post('/preferences/sounds/upload',
+  authenticate,
+  uploadAudio.single('sound'),
+  notificationController.uploadCustomSound
+);
+router.delete('/preferences/sounds/:soundId',
+  authenticate,
+  param('soundId').isInt().withMessage('Sound ID must be a number'),
+  validate,
+  notificationController.deleteCustomSound
+);
 
 // Admin notification endpoints
 router.post('/admin/notifications/process-reminders', authenticate, requireAdmin, notificationController.processPendingReminders);

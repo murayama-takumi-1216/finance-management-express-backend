@@ -1,19 +1,24 @@
 import { query } from '../config/database.js';
+import fs from 'fs';
+import path from 'path';
 
 /**
- * Available notification sounds
+ * Built-in notification sounds (generated via Web Audio API on frontend)
  */
-export const NOTIFICATION_SOUNDS = [
-  { id: 'default', name: 'Default', file: 'default.mp3' },
-  { id: 'chime', name: 'Chime', file: 'chime.mp3' },
-  { id: 'bell', name: 'Bell', file: 'bell.mp3' },
-  { id: 'ping', name: 'Ping', file: 'ping.mp3' },
-  { id: 'pop', name: 'Pop', file: 'pop.mp3' },
-  { id: 'ding', name: 'Ding', file: 'ding.mp3' },
-  { id: 'alert', name: 'Alert', file: 'alert.mp3' },
-  { id: 'gentle', name: 'Gentle', file: 'gentle.mp3' },
-  { id: 'none', name: 'None (Silent)', file: null },
+export const BUILT_IN_SOUNDS = [
+  { id: 'default', name: 'Default', type: 'builtin' },
+  { id: 'chime', name: 'Chime', type: 'builtin' },
+  { id: 'bell', name: 'Bell', type: 'builtin' },
+  { id: 'ping', name: 'Ping', type: 'builtin' },
+  { id: 'pop', name: 'Pop', type: 'builtin' },
+  { id: 'ding', name: 'Ding', type: 'builtin' },
+  { id: 'alert', name: 'Alert', type: 'builtin' },
+  { id: 'gentle', name: 'Gentle', type: 'builtin' },
+  { id: 'none', name: 'None (Silent)', type: 'builtin' },
 ];
+
+// For backward compatibility
+export const NOTIFICATION_SOUNDS = BUILT_IN_SOUNDS;
 
 /**
  * Get all notifications for current user
@@ -249,9 +254,26 @@ export const updateUserPreferences = async (req, res) => {
       timezone,
     } = req.body;
 
-    // Validate notification sound
-    if (notificationSound && !NOTIFICATION_SOUNDS.find(s => s.id === notificationSound)) {
-      return res.status(400).json({ error: 'Invalid notification sound.' });
+    // Validate notification sound (built-in or custom)
+    if (notificationSound) {
+      const isBuiltIn = BUILT_IN_SOUNDS.find(s => s.id === notificationSound);
+      const isCustom = notificationSound.startsWith('custom_');
+
+      if (!isBuiltIn && !isCustom) {
+        return res.status(400).json({ error: 'Invalid notification sound.' });
+      }
+
+      // If custom, verify it belongs to user
+      if (isCustom) {
+        const customId = notificationSound.replace('custom_', '');
+        const customResult = await query(
+          `SELECT id FROM custom_notification_sounds WHERE id = $1 AND id_usuario = $2`,
+          [customId, req.user.id]
+        );
+        if (customResult.rows.length === 0) {
+          return res.status(400).json({ error: 'Custom sound not found.' });
+        }
+      }
     }
 
     // Validate volume
@@ -342,10 +364,138 @@ export const updateUserPreferences = async (req, res) => {
 };
 
 /**
- * Get available notification sounds
+ * Get available notification sounds (built-in + user's custom sounds)
  */
 export const getAvailableSounds = async (req, res) => {
-  res.json({ sounds: NOTIFICATION_SOUNDS });
+  try {
+    // Get user's custom sounds
+    const result = await query(
+      `SELECT * FROM custom_notification_sounds WHERE id_usuario = $1 ORDER BY created_at DESC`,
+      [req.user.id]
+    );
+
+    const customSounds = result.rows.map(s => ({
+      id: `custom_${s.id}`,
+      name: s.name,
+      type: 'custom',
+      url: `/uploads/sounds/${s.filename}`,
+      filename: s.filename,
+    }));
+
+    res.json({
+      sounds: [...BUILT_IN_SOUNDS, ...customSounds],
+      builtIn: BUILT_IN_SOUNDS,
+      custom: customSounds,
+    });
+  } catch (error) {
+    console.error('Get available sounds error:', error);
+    res.status(500).json({ error: 'Failed to get sounds.' });
+  }
+};
+
+/**
+ * Upload custom notification sound
+ */
+export const uploadCustomSound = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No audio file uploaded.' });
+    }
+
+    const { originalname, filename, path: filePath, size } = req.file;
+    const name = req.body.name || path.basename(originalname, path.extname(originalname));
+
+    // Check if user already has 10 custom sounds (limit)
+    const countResult = await query(
+      `SELECT COUNT(*) as count FROM custom_notification_sounds WHERE id_usuario = $1`,
+      [req.user.id]
+    );
+
+    if (parseInt(countResult.rows[0].count) >= 10) {
+      // Delete the uploaded file
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ error: 'Maximum 10 custom sounds allowed. Please delete some to upload more.' });
+    }
+
+    // Save to database
+    const result = await query(
+      `INSERT INTO custom_notification_sounds (id_usuario, name, filename, original_name, file_size)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [req.user.id, name, filename, originalname, size]
+    );
+
+    const sound = result.rows[0];
+
+    res.json({
+      message: 'Sound uploaded successfully.',
+      sound: {
+        id: `custom_${sound.id}`,
+        name: sound.name,
+        type: 'custom',
+        url: `/uploads/sounds/${sound.filename}`,
+        filename: sound.filename,
+      },
+    });
+  } catch (error) {
+    console.error('Upload custom sound error:', error);
+    // Clean up file if upload failed
+    if (req.file && req.file.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
+    res.status(500).json({ error: 'Failed to upload sound.' });
+  }
+};
+
+/**
+ * Delete custom notification sound
+ */
+export const deleteCustomSound = async (req, res) => {
+  try {
+    const { soundId } = req.params;
+
+    // Get sound info
+    const result = await query(
+      `SELECT * FROM custom_notification_sounds WHERE id = $1 AND id_usuario = $2`,
+      [soundId, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Sound not found.' });
+    }
+
+    const sound = result.rows[0];
+
+    // Delete file from disk
+    const uploadDir = process.env.UPLOAD_DIR || 'uploads';
+    const filePath = path.join(uploadDir, 'sounds', sound.filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    // Delete from database
+    await query(
+      `DELETE FROM custom_notification_sounds WHERE id = $1`,
+      [soundId]
+    );
+
+    // If user was using this sound, reset to default
+    await query(
+      `UPDATE user_preferences
+       SET notification_sound = 'default'
+       WHERE id_usuario = $1 AND notification_sound = $2`,
+      [req.user.id, `custom_${soundId}`]
+    );
+
+    res.json({ message: 'Sound deleted successfully.' });
+  } catch (error) {
+    console.error('Delete custom sound error:', error);
+    res.status(500).json({ error: 'Failed to delete sound.' });
+  }
 };
 
 /**

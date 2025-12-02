@@ -400,6 +400,20 @@ const createTables = async () => {
     `);
     console.log('Table notifications created');
 
+    // Create Custom Notification Sounds table
+    await query(`
+      CREATE TABLE IF NOT EXISTS custom_notification_sounds (
+        id SERIAL PRIMARY KEY,
+        id_usuario UUID NOT NULL REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        filename VARCHAR(255) NOT NULL,
+        original_name VARCHAR(255),
+        file_size INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('Table custom_notification_sounds created');
+
     // Create indexes for better query performance
     await query(`CREATE INDEX IF NOT EXISTS idx_movimientos_cuenta ON movimientos(id_cuenta);`);
     await query(`CREATE INDEX IF NOT EXISTS idx_movimientos_fecha ON movimientos(fecha_operacion);`);

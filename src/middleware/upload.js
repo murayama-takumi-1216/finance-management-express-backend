@@ -18,6 +18,8 @@ const storage = multer.diskStorage({
       subDir = 'imagenes';
     } else if (file.mimetype === 'application/pdf') {
       subDir = 'pdfs';
+    } else if (file.mimetype.startsWith('audio/')) {
+      subDir = 'sounds';
     }
 
     const fullPath = path.join(uploadDir, subDir);
@@ -41,13 +43,37 @@ const fileFilter = (req, file, cb) => {
     'image/png',
     'image/gif',
     'image/webp',
-    'application/pdf'
+    'application/pdf',
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/wav',
+    'audio/ogg',
+    'audio/webm',
+    'audio/x-wav'
   ];
 
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only images and PDFs are allowed.'), false);
+    cb(new Error('Invalid file type. Only images, PDFs, and audio files are allowed.'), false);
+  }
+};
+
+// Audio-only file filter
+const audioFileFilter = (req, file, cb) => {
+  const allowedMimes = [
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/wav',
+    'audio/ogg',
+    'audio/webm',
+    'audio/x-wav'
+  ];
+
+  if (allowedMimes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Invalid file type. Only MP3, WAV, and OGG audio files are allowed.'), false);
   }
 };
 
@@ -68,6 +94,16 @@ export const uploadMultiple = multer({
   limits: {
     fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024, // 10MB default
     files: 10 // Max 10 files at once
+  }
+});
+
+// Create multer instance for audio file upload
+export const uploadAudio = multer({
+  storage,
+  fileFilter: audioFileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB max for audio
+    files: 1
   }
 });
 
