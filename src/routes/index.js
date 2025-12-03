@@ -469,6 +469,9 @@ router.delete('/accounts/:accountId/events/:eventId',
   calendarController.deleteAccountEvent
 );
 
+// User's all reminders (across all accounts)
+router.get('/reminders', authenticate, calendarController.getAllUserReminders);
+
 // Account-scoped reminders
 router.get('/accounts/:accountId/reminders',
   authenticate,

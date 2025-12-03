@@ -1018,6 +1018,40 @@ export const getAccountReminders = async (req, res) => {
 };
 
 /**
+ * Get all reminders for the current user (across all accounts)
+ */
+export const getAllUserReminders = async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT r.*, e.titulo as evento_titulo, e.id_cuenta
+       FROM recordatorios r
+       JOIN eventos_calendario e ON r.id_evento = e.id_evento
+       WHERE e.id_usuario = $1 AND r.activo = TRUE AND r.enviado = FALSE
+       ORDER BY r.fecha_recordatorio ASC`,
+      [req.user.id]
+    );
+
+    const reminders = result.rows.map(r => ({
+      id: r.id_recordatorio,
+      mensaje: r.mensaje || r.evento_titulo,
+      fechaRecordatorio: r.fecha_recordatorio,
+      minutosAntes: r.minutos_antes,
+      canal: r.canal,
+      activo: r.activo,
+      enviado: r.enviado,
+      evento: { id: r.id_evento, titulo: r.evento_titulo },
+      accountId: r.id_cuenta,
+      createdAt: r.created_at
+    }));
+
+    res.json(reminders);
+  } catch (error) {
+    console.error('Get all user reminders error:', error);
+    res.status(500).json({ error: 'Failed to get reminders.' });
+  }
+};
+
+/**
  * Create reminder for a specific account
  */
 export const createAccountReminder = async (req, res) => {
