@@ -1063,13 +1063,16 @@ export const createAccountReminder = async (req, res) => {
     // If no event is specified, create a generic reminder event first
     let eventId = id_evento;
 
+    // Format the event time (original selected time) as local datetime string
+    const eventTimeStr = formatLocalDateTime(eventTime);
+
     if (!eventId) {
       const eventResult = await query(
         `INSERT INTO eventos_calendario
          (id_usuario, id_cuenta, titulo, fecha_hora_inicio, tipo)
          VALUES ($1, $2, $3, $4, 'recordatorio_generico')
          RETURNING id_evento`,
-        [req.user.id, accountId, mensaje, fecha_recordatorio]
+        [req.user.id, accountId, mensaje, eventTimeStr]
       );
       eventId = eventResult.rows[0].id_evento;
     }
