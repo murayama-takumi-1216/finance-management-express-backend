@@ -446,8 +446,8 @@ export const getIncomeVsExpenses = async (req, res) => {
     switch (agrupacion) {
       case 'dia':
         groupBy = "DATE_TRUNC('day', fecha_operacion)";
-        selectPeriod = `TO_CHAR(fecha_operacion, 'YYYY-MM-DD') as periodo`;
-        orderBy = 'fecha_operacion';
+        selectPeriod = `TO_CHAR(DATE_TRUNC('day', fecha_operacion), 'YYYY-MM-DD') as periodo`;
+        orderBy = "DATE_TRUNC('day', fecha_operacion)";
         break;
       case 'semana':
         groupBy = "DATE_TRUNC('week', fecha_operacion)";
